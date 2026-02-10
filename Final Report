@@ -1,0 +1,557 @@
+\documentclass[a4paper,12pt]{report}
+
+% Packages
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+\usepackage{titlesec}  % For title formatting
+\geometry{margin=1in}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{lipsum}
+\setstretch{1.5}
+
+
+% Header and Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Volatility Surface Dynamics}
+\fancyhead[R]{\thepage}
+
+% Title Formatting
+\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
+
+% Cover Page
+\title{
+    \vspace{2cm} % Adjust vertical space
+    \includegraphics[width=0.55\textwidth]{logo_hkust2.png} \\ % Add your logo here (change "logo.png" to the actual filename)
+    \vspace{1cm} % Adjust vertical space after the logo
+    \textbf{Volatility Surface Dynamics} \\
+    \vspace{1cm} % Adjust vertical space
+    \large IEDA 4520 \\
+    \vspace{0.5cm} % Adjust vertical space
+    \large 7th December 2025
+}
+\author{Oliwer Aleksander Wirkus - Nikhil Kurian Joseph - Ananya Singhvi
+}
+\date{}
+
+\begin{document}
+
+% Title Page
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+\begin{abstract}
+This report explores the dynamics of implied volatility surfaces using a principal component analysis (PCA) approach, replicating and extending the methodology from Cont and da Fonseca (2002). We analyze daily changes in the implied volatility surface of S\&P 500 index options from 2015 to 2024, identifying key factors driving its evolution. The study tests the "sticky moneyness" hypothesis and decomposes surface movements into orthogonal eigenmodes using the Karhunen-Lo\`eve decomposition. Our findings reveal three dominant factors explaining the majority of variance, with implications for volatility trading, hedging, and risk management.
+\end{abstract}
+\newpage
+\tableofcontents
+
+\chapter{Introduction and Background}
+
+\section{Background}
+The implied volatility surface represents a critical tool in options pricing and risk management, capturing the market's expectations of future volatility across different strikes and maturities. As noted in Cont and da Fonseca (2002), the surface is not static but evolves dynamically over time, influenced by market forces. This evolution gives rise to "Vega" risk in option portfolios, where changes in implied volatility can significantly impact option values.
+
+In the Black-Scholes model, volatility is assumed constant, leading to a flat implied volatility surface. However, empirical observations show persistent features such as smiles, skews, and term structures, indicating deviations from this assumption. The paper by Cont and da Fonseca (2002) models the surface as a randomly fluctuating field driven by a small number of orthogonal factors, using a Karhunen-Lo\`eve decomposition on daily variations.
+
+Our study replicates this approach on more recent data (2015--2024) for S\&P 500 options, aiming to verify if the factor structure persists and test the "sticky moneyness" rule, where the surface remains stable when expressed in terms of moneyness and time-to-maturity.
+
+
+
+\section{Option Chains}
+\label{sec:option-chains}
+
+An option chain provides a comprehensive listing of all available call and put options for a given underlying asset at a specific expiration date. As shown in the typical equity index chain (Figure \ref{fig:option_chain1}), these tables contain the essential market data needed for volatility surface construction and analysis .
+
+Key columns in an option chain include:
+\begin{itemize}
+    \item \textbf{Strike Price}: Determines whether an option is in-the-money (ITM), at-the-money (ATM), or out-of-the-money (OTM) relative to the current underlying price.
+    \item \textbf{Bid/Ask Prices}: Represent executable market quotes and define the tradable spread.
+    \item \textbf{Implied Volatility (IV)}: The volatility parameter that, when input into the Black-Scholes formula, matches the market option price. Per put-call parity, call and put IVs at the same strike and expiry should be equal to prevent arbitrage.
+    \item \textbf{Volume \& Open Interest}: Indicate trading activity and market participation at each strike.
+    \item \textbf{Greeks (Delta, Gamma)}: Measure sensitivity to underlying price movements and convexity, revealing where gamma exposure is concentrated.
+\end{itemize}
+
+For empirical studies of volatility surfaces, attention is typically focused on OTM options—calls with $m > 1$ and puts with $m < 1$—as they are generally more liquid and carry the purest volatility information without intrinsic value distortion. Furthermore, options with time-to-maturity exceeding approximately one month are preferred to avoid the erratic behavior of very short-dated volatility.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{placeholder_option_chain1.png}
+\caption{Example S\&P 500 index option chain showing strikes, bid/ask prices, implied volatilities, and greeks. The highest liquidity typically concentrates near ATM strikes and in shorter expiries.}
+\label{fig:option_chain1}
+\end{figure}
+
+\newpage
+\section{Implied Volatility (IV)}
+\label{sec:implied-volatility}
+
+Implied volatility (IV) represents the market's consensus forecast of an asset's annualized future volatility, extracted from traded option prices. Formally, given the market price $C_t^*(K, T)$ of a European call option with strike $K$ and maturity $T$, the Black-Scholes implied volatility $\sigma_t^{BS}(K, T)$ is the unique solution to
+\[
+C^{BS}(S_t, K, \tau, \sigma_t^{BS}(K, T)) = C_t^*(K, T),
+\]
+where the Black-Scholes formula for a non-dividend paying asset is
+\[
+C^{BS}(S_t, K, \tau, \sigma) = S_t N(d_1) - K e^{-r\tau} N(d_2)
+\]
+with
+\[
+d_1 = \frac{-\ln m + \tau(r + \sigma^2 / 2)}{\sigma \sqrt{\tau}}, \quad 
+d_2 = d_1 - \sigma \sqrt{\tau},
+\]
+and $m = K/S_t$ is moneyness, $\tau = T-t$ is time to maturity, $r$ is the risk-free rate, and $N(\cdot)$ is the standard normal CDF.
+
+IV is not directly observable but must be computed numerically via iterative methods such as Newton-Raphson, since no closed-form inverse exists. In practice, IV serves as a standardized quoting mechanism for options—transforming price into a volatility metric that is comparable across strikes, maturities, and underlyings. A higher IV indicates greater expected price uncertainty, translating to higher option premiums, while lower IV suggests market stability.
+
+Key properties of IV include:
+\begin{itemize}
+    \item \textbf{Put-Call Parity}: For European options, call and put IVs at identical strike and expiry must coincide to prevent arbitrage.
+    \item \textbf{Expected Move}: The market's one-standard-deviation expected price change over period $\tau$ is approximately $S_t \times \sigma^{BS} \times \sqrt{\tau}$.
+    \item \textbf{Non-constancy}: Contrary to Black-Scholes assumptions, $\sigma^{BS}$ varies with both $K$ and $T$, forming the implied volatility surface.
+\end{itemize}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.7\textwidth]{placeholder_iv_example.png}
+    \caption{High vs. low implied volatility scenarios. Higher IV (right) implies a wider distribution of expected future prices, increasing option premiums for both calls and puts.}
+    \label{fig:iv}
+\end{figure}
+
+\section{Implied Volatility Surfaces}
+
+The implied volatility surface $\sigma^{BS}_t(K, T)$ provides a complete map of market volatility expectations across all strikes $K$ and maturities $T$ at time $t$. By parameterizing in relative coordinates—moneyness $m = K/S_t$ and time-to-maturity $\tau = T - t$—we obtain the surface $I_t(m, \tau)$, which is more stable for analysis as it normalizes for spot price movements.
+
+Empirically, the surface exhibits three characteristic patterns that contradict the flat surface predicted by Black-Scholes:
+\begin{itemize}
+    \item \textbf{Term Structure}: Near-term IV often exceeds long-term IV due to event-driven uncertainty.
+    \item \textbf{Volatility Smile}: OTM options have higher IV than ATM, reflecting fat-tailed return distributions.
+    \item \textbf{Skew}: In equities, put wings ($m<1$) show higher IV than call wings ($m>1$), indicating greater fear of market crashes.
+\end{itemize}
+
+A common trading heuristic is the \textit{sticky moneyness} rule, which assumes $I_t(m, \tau)$ remains constant day-to-day. However, as shown in Figure \ref{fig:iv_surface} and confirmed by Cont \& da Fonseca (2002), the surface fluctuates significantly, creating Vega risk that must be modeled stochastically.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\textwidth]{placeholder_iv_surface.png}
+    \caption{Example implied volatility surface showing skew, smile, and term structure patterns. The surface evolves dynamically over time, violating the sticky moneyness assumption.}
+    \label{fig:iv_surface}
+\end{figure}
+
+\chapter{Reference Paper and Hypothesis}
+
+\section{Reference Paper}
+\label{sec:reference-paper}
+
+The methodological foundation of this study is the seminal work \textit{Dynamics of Implied Volatility Surfaces} by Cont and da Fonseca, published in \textit{Quantitative Finance}. Their paper provides a data-driven framework for modeling the stochastic evolution of entire implied volatility surfaces, moving beyond static smile calibrations.
+
+Using six years of daily S\&P 500 and FTSE 100 index option data (1994--2000), the authors treat the logarithm of the implied volatility surface $\ln I_t(m, \tau)$ as a two-dimensional random field. They apply functional principal component analysis—specifically, the Karhunen–Loève (KL) decomposition—to the daily increments $\Delta \ln I_t$ to identify the dominant orthogonal modes of variation.
+
+Key findings include:
+\begin{itemize}
+    \item The daily surface dynamics are driven by a small number of factors: the first three eigenmodes explain over 98\% of the variance.
+    \item The leading mode (∼94\% variance) represents a parallel \textit{level shift} of the entire surface.
+    \item The second mode (∼3\% variance) corresponds to a \textit{skew/tilt}—opposite movements in OTM call and put volatilities.
+    \item The third mode (∼0.8\% variance) captures changes in \textit{curvature} or convexity (smile).
+    \item Each factor evolves as a mean-reverting process, decorrelated from pure underlying asset returns, justifying the need for separate Vega hedging.
+\end{itemize}
+
+The authors model the surface as a stationary random field driven by these factors, providing a mathematical justification for why the common \textit{sticky moneyness} rule—which assumes a fixed surface in $(m,\tau)$ coordinates—fails empirically. Our work directly extends theirs by applying the same KL decomposition methodology to a more recent dataset (2015–2024), testing whether these factor structures and dynamics persist in modern markets.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\textwidth]{placeholder_paper_cover.png}
+    \caption{Cont and da Fonseca (2002) established the functional PCA approach for analyzing implied volatility surface dynamics, which serves as the blueprint for this study.}
+    \label{fig:paper}
+\end{figure}
+
+
+\section{Hypothesis Testing}
+\label{sec:hypothesis-testing}
+
+Our empirical investigation is motivated by the central hypothesis that implied volatility surfaces are not static objects but exhibit significant, structured variation over time. As visually evidenced in Figure \ref{fig:hypothesis}, the shape and level of the S\&P 500 volatility surface undergo notable transformations across different market periods (2015--2018), contradicting deterministic rules of thumb commonly employed by practitioners.
+
+We specifically test the validity of the \textit{sticky moneyness} rule—a key trading heuristic which posits that the implied volatility surface $I_t(m, \tau)$, when expressed in moneyness $m = K/S_t$ and time-to-maturity $\tau$, remains approximately constant from one day to the next. Formally, this rule assumes:
+\[
+I_{t+\Delta t}(m, \tau) \approx I_t(m, \tau) \quad \forall (m, \tau).
+\]
+If valid, this would imply that all Vega risk could be hedged trivially and that surface dynamics are deterministic.
+
+Following the approach of Cont and da Fonseca, we hypothesize that:
+\begin{enumerate}
+    \item The daily \textit{changes} in the log-implied volatility surface $\Delta \ln I_t(m, \tau)$ are non-negligible and stochastic.
+    \item These changes can be decomposed into a small set of orthogonal factors via Karhunen–Loève analysis.
+    \item The factor structure observed in modern data (2015–2024) will resemble that found in the original study (1994–2000), but the relative importance of level, skew, and curvature modes may differ due to evolving market microstructures and volatility products.
+\end{enumerate}
+
+By quantifying these deformations and comparing the extracted eigenmodes with historical results, we assess whether the sticky moneyness assumption holds and provide an updated empirical characterization of volatility surface dynamics.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\textwidth]{placeholder_background_image.png}
+    \caption{Sample implied volatility surfaces for the S\&P 500 index across different years (2015--2018). Visible differences in level, skew, and term structure challenge the assumption of a static surface in moneyness coordinates.}
+    \label{fig:hypothesis}
+\end{figure}
+
+\chapter{Methodology}
+
+\section{Data and Surface Parametrization}
+\label{sec:data-parametrization}
+
+This study utilizes daily S\&P 500 (SPX) index option chain data spanning the period 2015–2024. Each daily snapshot contains, for every listed option: a timestamp, strike price $K$, underlying price $S_t$, option mid-price, expiry date, and a call/put identifier. These raw observations form the building blocks for constructing a continuous implied volatility surface for each trading day.
+
+Following the methodology outlined, we transform the raw option data into a standardized parametric representation suitable for surface analysis:
+
+\begin{itemize}
+    \item \textbf{Time-to-Maturity ($\tau$)}: Measured in years as $\tau = (T - t)/365$, where $T$ is the option expiry date and $t$ is the observation timestamp.
+    \item \textbf{Moneyness ($m$)}: Defined as $m = K / S_t$, normalizing strike prices relative to the current spot. This facilitates comparison across time and aligns with the \textit{sticky moneyness} hypothesis.
+    \item \textbf{Implied Volatility ($\sigma^{BS}$)}: For each option, the Black-Scholes implied volatility is computed by numerically inverting the Black-Scholes formula using the observed option price, strike $K$, underlying $S_t$, time-to-maturity $\tau$, and an appropriate risk-free rate (e.g., Treasury yield). Note that we obtained Implied Volatility directly from our data source, without any need to compute it ourselves. Common methods include the Bisection Method, or the Newton-Raphson Method. 
+\end{itemize}
+
+Thus, each trading day $t$ yields a discrete set of points $\{(m_i, \tau_i, \sigma^{BS}_i)\}_{i=1}^{N_t}$ which collectively define the day's implied volatility surface in the moneyness–maturity domain. The surface construction and subsequent analysis are implemented in Python, with the complete computational pipeline detailed in the accompanying python notebook.
+
+\section{Data Cleaning and Filtering}
+\label{sec:data-cleaning}
+
+To obtain a stable and representative sample for volatility surface analysis, several filtering criteria are applied to the raw option data, following empirical best practices.
+
+\begin{itemize}
+    \item \textbf{OTM Options Only}: We retain only out-of-the-money options—calls with $m > 1$ and puts with $m < 1$. OTM options are typically more liquid, have higher volatility sensitivity (Vega), and contain no intrinsic value, making their implied volatilities more informative for surface dynamics.
+    
+    \item \textbf{Maturity Filter}: Options with time-to-maturity $\tau < 35/365$ years are excluded. Very short-dated options exhibit erratic volatility behavior due to microstructure effects, expiration pinning, and discrete event risk, which can distort surface estimation.
+    
+    \item \textbf{Moneyness Range}: The moneyness domain is restricted to $m \in [0.5, 1.2]$. This truncation removes extreme wings where data is sparse and ensures a reasonably symmetric distribution of observations around the at-the-money point ($m = 1$), as shown in Figure \ref{fig:density}.
+\end{itemize}
+
+The resulting filtered dataset exhibits the characteristic asymmetric density observed in equity index markets: a higher concentration of OTM puts ($m < 1$) than OTM calls ($m > 1$), reflecting the persistent demand for downside protection. The three-dimensional density plot (Figure \ref{fig:density}) visualizes the joint distribution of observations across the moneyness–maturity plane, confirming that the bulk of market activity concentrates near ATM strikes and in short maturities.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{Data density.png}
+    \caption{Observation density across the filtered moneyness–maturity domain. Higher density in OTM puts (left side) reflects the market's skew and demand for downside protection.}
+    \label{fig:density}
+\end{figure}
+
+\section{Surface Fitting via Kernel Smoothing}
+\label{sec:surface-fitting}
+
+To obtain a continuous, differentiable implied volatility surface from the discrete filtered observations, we employ the non-parametric Nadaraya–Watson kernel regression estimator. This method, also used by Cont and da Fonseca \cite{cont2002}, constructs a smooth surface $\hat{I}_t(m, \tau)$ for each trading day by computing a locally weighted average of the observed implied volatilities.
+
+For a given day, let $\{(m_i, \tau_i, I_i)\}_{i=1}^n$ denote the $n$ observations of moneyness, time-to-maturity, and implied volatility. The smoothed surface at point $(m, \tau)$ is given by:
+\[
+\hat{I}_t(m, \tau) = \frac{\sum_{i=1}^n I_i \, K_h(m - m_i, \tau - \tau_i)}{\sum_{i=1}^n K_h(m - m_i, \tau - \tau_i)},
+\]
+where $K_h$ is a two-dimensional Gaussian kernel:
+\[
+K_h(u, v) = \frac{1}{2\pi h_m h_\tau} \exp\left(-\frac{u^2}{2h_m^2} - \frac{v^2}{2h_\tau^2}\right).
+\]
+The bandwidth parameters $h_m$ and $h_\tau$ control the degree of smoothing in the moneyness and maturity dimensions, respectively.
+
+The smoothing process is illustrated in Figure \ref{fig:three-surfaces}:
+\begin{itemize}
+    \item \textbf{Raw Data} (left): Discrete, noisy IV observations across $(m, \tau)$.
+    \item \textbf{Kernel Application} (center): Each observation contributes a Gaussian-weighted influence to neighboring points.
+    \item \textbf{Fitted Surface} (right): The resulting smooth, continuous surface preserves the essential smile and term structure while attenuating microstructure noise and filling sparse regions.
+\end{itemize}
+
+This approach yields a daily time series of smooth surfaces $\{\hat{I}_t(m, \tau)\}$ suitable for functional data analysis, without imposing restrictive parametric assumptions on the shape of the volatility surface.
+\newpage
+\begin{figure}[htbp]
+    \centering
+    
+    % --- Top row: two images ---
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{surface fitting 1.png}
+        \caption{Raw implied volatility observations.}
+        \label{fig:raw}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{surface fitting 2.png}
+        \caption{Gaussian kernel weighting of each observation.}
+        \label{fig:kernels}
+    \end{minipage}
+    
+    % --- Bottom row: one centered image ---
+    \vspace{1.5em}  % nice spacing between the rows
+    \begin{minipage}{0.68\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{surface fitting 3.png}
+        \caption{Fitted continuous IV surface.}
+        \label{fig:fitted}
+    \end{minipage}
+    
+    \caption{Stages of the kernel smoothing procedure: from discrete observations to a continuous implied volatility surface.}
+    \label{fig:three-surfaces}
+\end{figure}
+
+\section{Kernel Calibration}
+Bandwidth selection balances smoothness and detail. Tested values show $h = 0.05$ for both dimensions optimal: too high loses information, too low captures noise.
+
+\newpage
+\begin{figure}[htbp]
+    \centering
+    
+    % --- Top row: two images ---
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{KC 1.png}
+        \caption{Too high}
+        \label{fig:too-high}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{KC 2.png}
+        \caption{Too low}
+        \label{fig:too-low}
+    \end{minipage}
+    
+    % --- Bottom row: one centered image ---
+    \vspace{1.2em}  % vertical spacing between rows
+    \begin{minipage}{0.65\textwidth}   % adjust width as needed (0.6–0.75 usually looks good)
+        \centering
+        \includegraphics[width=\textwidth]{KC 3.png}
+        \caption{Perfect balance}
+        \label{fig:perfect}
+    \end{minipage}
+    
+    \caption{K--C values: too high, too low, and the optimal balanced case.}
+    \label{fig:kc-comparison}
+\end{figure}
+
+\section{Principal Component Analysis (PCA)}
+PCA identifies directions of maximum variance. For data matrix $X$, compute covariance $S = X^T X / (n-1)$, then eigenvalues $\lambda$ and eigenvectors $v$ where $S v = \lambda v$.
+
+Eigenvectors are orthogonal, eigenvalues indicate variance proportion.
+\newpage
+\begin{figure}[htbp]
+    \centering
+    
+    % --- Top row: two images ---
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{2D PCA.png}
+        \caption{2-D PCA analysis}
+        \label{fig:raw}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{3D PCA.png}
+        \caption{3D PCA analysis}
+        \label{fig:kernels}
+    \end{minipage}
+
+
+    \label{fig:three-surfaces}
+\end{figure}
+
+\section{Karhunen-Lo\`eve (KL) Decomposition}
+KL generalizes PCA to functional data like surfaces. For stationary random field $X(t)$, decompose as:
+
+\[
+X(t) = \sum_k \sqrt{\lambda_k} \xi_k \phi_k(t)
+\]
+
+where $\phi_k$ are eigenfunctions of the covariance operator.
+
+Data differenced for stationarity: analyze $\Delta I_t = I_t - I_{t-1}$.
+
+
+\begin{itemize}
+    \item The covariance matrix of the (centered) data is symmetric $\to$ all eigenvectors are guaranteed to be orthogonal.
+    \item To ensure unique solutions and avoid sign/direction consistency, we:
+    \begin{itemize}
+        \item Normalize every eigenvector to unit length ($\Vert v_i \Vert = 1$)
+        \item Impose a directional constraint (e.g., require the loading with largest absolute value to be positive, or fix the sign at ATM/short-maturity point)
+    \end{itemize}
+    \item In higher-dimensional settings (images, surfaces, functional data), eigenvectors are naturally generalized to \textbf{eigenmodes} or \textbf{eigenfunctions}.
+\end{itemize}
+
+\textbf{Stationarity requirement for meaningful PCA/KL}  
+\begin{itemize}
+    \item PCA/KL identifies directions of \textit{maximum variance}. With strongly trending (non-stationary) data, the first component will overwhelmingly capture the drift rather than economically interesting fluctuations.
+    \item To achieve stationarity, we work with \textbf{first differences} of the implied volatility surface:
+    \begin{itemize}
+        \item Input data = daily changes in IV (ΔIV surface) instead of raw daily levels
+        \item This removes the dominant level trend and focuses the decomposition on genuine day-to-day movements (shocks, skew rotations, curvature changes).
+    \end{itemize}
+\end{itemize}
+
+These two steps—orthogonality/uniqueness enforcement and differencing—are critical for obtaining stable, interpretable, and economically meaningful eigenmodes.
+
+
+
+\chapter{Results and Analysis}
+
+\section{Results: Eigenmodes and Variances}
+We benchmark the first three eigenmodes from our KL decomposition against the canonical findings in Cont and da Fonseca (2002). Both analyses are conducted in moneyness--maturity space and applied to \textit{daily changes} in the implied volatility surface, ensuring like-for-like comparability.
+
+\textbf{Geometry of modes.}  
+The modal geometry is consistent with the literature:  
+\begin{itemize}
+    \item The first eigenfunction is a \textit{level}-type mode that uniformly shifts the entire surface.
+    \item The second and third modes are \textit{shape} modes that tilt and twist the smile/skew across both moneyness and maturity.
+\end{itemize}
+This alignment supports the robustness of our preprocessing pipeline (surface parameterization, kernel smoothing, detrending) and the stability of the KL basis across different samples.
+
+\textbf{Variance explained.}  
+\begin{itemize}
+    \item First mode: \textbf{75.6\%} of total variance (vs.~94\% in the benchmark study)
+    \item Second mode: \textbf{3.8\%} (vs.~approximately 3\%)
+    \item Third mode: \textbf{3.2\%} (vs.~approximately 0.8\%)
+\end{itemize}
+Relative to the 1990s benchmark, variance in the recent period is markedly \textit{less concentrated} in the level component and \textit{more dispersed} into higher-order shape dynamics.
+
+\textbf{Interpretation.}  
+We attribute the reduced dominance of the level mode and the increased contribution of shape modes to structural differences in the sample periods:
+\begin{itemize}
+    \item Our 2015--2024 window includes several event-driven regimes (2020 COVID shock, rapid rate-hiking cycles, episodic liquidity stress).
+    \item These events generate localized surface deformations—maturity-dependent term-structure kinks and moneyness-dependent skew rotations—beyond simple parallel shifts.
+    \item The 1990s sample was comparatively calmer, with fewer large cross-sectional re-shapings, allowing the level mode to dominate.
+    \item  Event-driven 2015–2024 dynamics and increased retail options trading heightened flow heterogeneity, boosting shape-mode variance and reducing the dominance of the level mode.
+\end{itemize}
+
+\textbf{Implications for modeling and risk management.}  
+The heavier tail of explained variance across shape modes suggests:
+\begin{itemize}
+    \item Single-factor models for daily IV dynamics will systematically \textit{underfit} post-2015 surfaces; \textbf{at least two shape factors} are required to capture skew and term-structure rotations.
+    \item Risk control and scenario design should assign greater weight to \textit{non-parallel} moves (smile steepening/flattening, maturity-specific dislocations).
+    \item Calibration schemes assuming stable proportional shocks across moneyness are likely \textit{misspecified} during stressed regimes.
+\end{itemize}
+
+\newpage
+\begin{figure}[htbp]
+    \centering
+    
+    % --- Top row: two images ---
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Eigenmode 1.png}
+        \caption{Eigenmode 1}
+        \label{fig:too-high}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Eignemode 2.png}
+        \caption{Eigenmode 2}
+        \label{fig:too-low}
+    \end{minipage}
+    
+    % --- Bottom row: one centered image ---
+    \vspace{1.2em}  % vertical spacing between rows
+    \begin{minipage}{0.48\textwidth}   % adjust width as needed (0.6–0.75 usually looks good)
+        \centering
+        \includegraphics[width=\textwidth]{Eigenmode 3.png}
+        \caption{Eigenmode 3}
+        \label{fig:perfect}
+    \end{minipage}
+    
+    \caption{Our eigenmodes}
+    \label{fig:kc-comparison}
+\end{figure}
+
+
+
+
+\section{Results: Eigenmode Descriptions}
+
+\textbf{Eigenmode 1 – Level shift (explains 75.6\% of variance)}  
+\begin{itemize}
+    \item Strongly peaked near at-the-money (ATM) and short maturities
+    \item Loadings decay smoothly toward deep OTM strikes and longer tenors
+    \item Represents broad, nearly parallel shifts of the entire surface
+    \item Captures the dominant ``headline'' variance risk, concentrated in short-dated ATM options
+\end{itemize}
+
+\textbf{Eigenmode 2 – Skew/tilt (explains 3.8\% of variance)}  
+\begin{itemize}
+    \item Opposite-signed loadings in the wings relative to the center
+    \item Particularly strong amplitude at short maturities
+    \item Acts as a classic skew factor: positive realizations steepen the put wing (increased crash protection demand) while flattening the call wing
+\end{itemize}
+
+\textbf{Eigenmode 3 – Curvature/wing adjustment (explains 3.2\% of variance)}  
+\begin{itemize}
+    \item Highly localized loading at high moneyness (far OTM calls) and very short maturities
+    \item Reflects episodic upside-risk repricing or supply--demand imbalances in the call wing
+\end{itemize}
+
+\textbf{Key conclusions from the KL analysis}
+\begin{enumerate}
+    \item \textbf{Low effective dimensionality remains}: the first three modes still explain the overwhelming majority of daily surface movements, supporting compact and parsimonious risk representations.
+    
+    \item \textbf{Shift toward shape risk}: compared with 1990s benchmarks, a significantly larger fraction of total variance is now carried by skew and curvature modes, reflecting more frequent and intense repricing of tail and asymmetry risks. Hedging strategies must explicitly address non-parallel (skew and curvature) shocks, not only level moves.
+    
+    \item \textbf{Front-end dominance}: Modes 2 and 3 are heavily concentrated at short maturities, confirming that the front end of the surface is the primary channel through which news and shocks propagate. This lends support to a qualified sticky-moneyness view—moneyness--maturity space is stable and useful, but exhibits imperfections during stressed regimes.
+\end{enumerate}
+
+
+\chapter{Limitations and Applications}
+
+\section{Limitations}
+\begin{itemize}
+    \item \textbf{Limitation – Uneven cross-sectional population}  
+      Downside and short-dated regions are densely populated, while long-dated tenors and far OTM calls are extremely sparse. This imbalance can bias the fitted surface geometry even after kernel smoothing.  
+      \textbf{Improvement} → Broaden and balance data sources (additional trading venues, intraday snapshots, multiple underlyings) and/or apply importance weighting or adaptive to local density.
+
+    \item \textbf{Limitation – End-of-day quotes and stale observations}  
+      Closing quotes vary in liquidity and frequently contain stale or wide bid–ask observations. The minimum-TTM filter, while stabilizing estimation, removes the most news-sensitive short-dated tenor.  
+      \textbf{Improvement} → Recompute implied volatilities from cleaned mid quotes using rigorous microstructure filters (minimum quote width, maximum quote age, volume thresholds) and consider intraday or transaction-weighted surfaces.
+
+    \item \textbf{Limitation – Propagation of model and inversion errors}  
+      Implied volatilities are taken as given; any mis-specification in the option pricing model (dividends, borrowing costs, early exercise) or numerical inversion errors directly contaminate the surface and downstream factor estimates.  
+      \textbf{Improvement} → Use dividend- and borrow-adjusted Black--Scholes or local-volatility models for inversion, combined with robust arbitrage-free surface constructions (e.g., SVI with no-arbitrage constraints, thin-plate splines with penalty terms, local polynomial regression, or Gaussian-process priors).
+
+    \item \textbf{Limitation – Fixed or heuristic bandwidth choice}  
+      The current Gaussian kernel employs a manually chosen bandwidth, which may over- or under-smooth in different regions of the moneyness--maturity plane.  
+      \textbf{Improvement} → Implement data-driven bandwidth selection via cross-validation, plug-in rules, or fully adaptive (nearest-neighbor or balloon) kernels that adjust smoothing locally to observation density and curvature.
+\end{itemize}
+
+These extensions would further reduce estimation bias, improve out-of-sample stability, and strengthen the economic interpretability of the extracted factors.
+
+
+
+\section{Applications}
+The low-dimensional KL representation directly translates into powerful, actionable tools:
+
+\begin{itemize}
+    \item \textbf{Precision hedging}  
+      Project portfolio vega onto the first three eigenmodes to decompose exposure into level, skew, and curvature components. This enables targeted, mode-specific hedges (e.g., using ATM straddles, risk reversals, and butterfly structures) and sharply reduces residual smile risk.
+
+    \item \textbf{Trading and relative-value signals}  
+      Time-series models (ARIMA, VAR, machine learning, etc.) fitted to the daily factor scores generate short-horizon forecasts. Traders can express views via:
+      \begin{itemize}
+          \item Calendars or boxes $\to$ bets on Mode 1 (level) dynamics
+          \item Risk reversals or 25-delta straddles $\to$ bets on Mode 2 (skew/tilt)
+          \item Butterfly or condor structures $\to$ bets on Mode 3 (curvature/wing)
+      \end{itemize}
+      while explicitly controlling unwanted cross-mode exposure.
+    \item \textbf{Risk management and monitoring}  
+      Real-time dashboards showing explained variance by mode, mode contributions to P\&L, and historical percentile levels support:
+      \begin{itemize}
+          \item limit setting and breach alerts,
+          \item regime detection (e.g., sudden surge in skew-mode variance),
+          \item market-data quality control (unusually large unexplained residuals flag bad quotes or missing strikes).
+      \end{itemize}
+
+    \item \textbf{Stress testing and scenario design}  
+      Mode-based scenarios (e.g., “+3σ move in Mode 2 only” = pure skew shock) produce economically interpretable, smile-consistent stress surfaces that are far more realistic than simple parallel shifts or ad-hoc smile deformations.
+\end{itemize}
+
+In summary, the factorized surface moves volatility from an opaque high-dimensional object to a compact, interpretable, and directly tradeable set of risk factors.
+
+
+
+\chapter{Conclusion}
+ Replicating the Cont–da Fonseca framework on 2015–2024 S\&P 500 options confirms that IVS dynamics are low‑dimensional and interpretable. Our decade features a smaller level share and more prominent skew/curvature activity than the 1990s benchmark, consistent with an event‑driven environment. The KL/PCA representation provides a practical basis for hedging, forecasting, and governance. Addressing data sparsity, adopting adaptive smoothing, and incorporating arbitrage‑aware surface fits are promising avenues to improve robustness and extend applicability.
+
+
+\end{document}

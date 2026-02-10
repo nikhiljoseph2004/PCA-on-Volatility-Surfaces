@@ -156,9 +156,6 @@ See `requirements.txt` for specific versions.
 
 *IEDA 4520 - December 2025*
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
@@ -173,10 +170,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Develop forecasting models based on identified factors
 - Compare with alternative dimensionality reduction techniques (e.g., Independent Component Analysis)
 
-## Contact
 
-For questions or collaboration opportunities, please open an issue on GitHub or contact the authors directly.
-
----
-
-**Note**: The data used in this analysis is not included in this repository due to licensing restrictions. Please obtain S&P 500 options data from a licensed data provider such as Bloomberg, OptionMetrics, or CBOE DataShop.
